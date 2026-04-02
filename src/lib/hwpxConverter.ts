@@ -4,7 +4,12 @@ export async function convertHwpxToMarkdown(file: File): Promise<string> {
   const zip = await JSZip.loadAsync(file);
   
   // 1. Read header.xml to find bold charPr IDs
-  const boldCharPrIds = new Set<string>();
+  interface CharStyle {
+    bold: boolean;
+    fontSizePt: number;
+  }
+  const charStyles = new Map<string, CharStyle>();
+
   try {
     const headerEntry = Object.keys(zip.files).find(name => name.endsWith('header.xml'));
     if (headerEntry) {
@@ -31,10 +36,14 @@ export async function convertHwpxToMarkdown(file: File): Promise<string> {
                  isBold = true;
              }
         }
-        
-        if (isBold) {
-          boldCharPrIds.add(id);
+
+        let heightPt = 10;
+        const heightAttr = pr.getAttribute('height');
+        if (heightAttr) {
+          heightPt = parseInt(heightAttr) / 100;
         }
+        
+        charStyles.set(id, { bold: isBold, fontSizePt: heightPt });
       }
     }
   } catch (e) {
@@ -75,16 +84,30 @@ export async function convertHwpxToMarkdown(file: File): Promise<string> {
 
     // Table
     if (nodeName === 'tbl') {
-      let tblText = '\n';
+      let tblHtml = '\n<table border="1">\n';
       const rows = Array.from(el.childNodes).filter(n => (n as Element).localName === 'tr');
-      rows.forEach((tr, index) => {
+      rows.forEach(tr => {
+        tblHtml += '  <tr>\n';
         const cells = Array.from(tr.childNodes).filter(n => (n as Element).localName === 'tc');
-        tblText += '| ' + cells.map(c => processNode(c).trim().replace(/\n+/g, '<br>')).join(' | ') + ' |\n';
-        if (index === 0) {
-          tblText += '|' + cells.map(() => '---').join('|') + '|\n';
-        }
+        cells.forEach(tc => {
+          const cellEl = tc as Element;
+          const colSpan = cellEl.getAttribute('colSpan') || cellEl.getAttribute('colspan') || '1';
+          const rowSpan = cellEl.getAttribute('rowSpan') || cellEl.getAttribute('rowspan') || '1';
+          
+          let attrs = '';
+          if (colSpan !== '1') attrs += ` colspan="${colSpan}"`;
+          if (rowSpan !== '1') attrs += ` rowspan="${rowSpan}"`;
+          
+          let cellContent = processNode(tc).trim();
+          // Convert internal newlines to <br> for HTML rendering
+          cellContent = cellContent.replace(/\n\n/g, '<br/>').replace(/\n/g, '<br/>');
+          
+          tblHtml += `    <td${attrs}>${cellContent}</td>\n`;
+        });
+        tblHtml += '  </tr>\n';
       });
-      return tblText + '\n';
+      tblHtml += '</table>\n\n';
+      return tblHtml;
     }
 
     // Paragraph
@@ -108,19 +131,27 @@ export async function convertHwpxToMarkdown(file: File): Promise<string> {
     // Run (text span with same style)
     if (nodeName === 'run') {
       const charPrIDRef = el.getAttribute('charPrIDRef');
-      const isBold = charPrIDRef && boldCharPrIds.has(charPrIDRef);
+      const style = charPrIDRef ? charStyles.get(charPrIDRef) : null;
       
       let runText = '';
       for (let i = 0; i < el.childNodes.length; i++) {
         runText += processNode(el.childNodes[i]);
       }
       
-      if (isBold && runText.trim()) {
-        const leadingSpaces = runText.match(/^\s*/)?.[0] || '';
-        const trailingSpaces = runText.match(/\s*$/)?.[0] || '';
-        return `${leadingSpaces}**${runText.trim()}**${trailingSpaces}`;
+      if (!runText.trim()) return runText;
+
+      const leadingSpaces = runText.match(/^\s*/)?.[0] || '';
+      const trailingSpaces = runText.match(/\s*$/)?.[0] || '';
+      let coreText = runText.trim();
+      
+      if (style?.bold) {
+        coreText = `**${coreText}**`;
       }
-      return runText;
+      if (style && style.fontSizePt && style.fontSizePt !== 10) {
+        coreText = `<span style="font-size: ${style.fontSizePt}pt">${coreText}</span>`;
+      }
+      
+      return `${leadingSpaces}${coreText}${trailingSpaces}`;
     }
     
     // Text item

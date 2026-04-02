@@ -2,6 +2,7 @@ import { useState, ChangeEvent } from 'react';
 import { Upload, FileText, Download, Loader2, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { convertHwpxToMarkdown } from './lib/hwpxConverter';
+import { convertHwpToMarkdown } from './lib/hwpConverter';
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -12,12 +13,12 @@ export default function App() {
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      if (selectedFile.name.toLowerCase().endsWith('.hwpx')) {
+      if (selectedFile.name.toLowerCase().endsWith('.hwpx') || selectedFile.name.toLowerCase().endsWith('.hwp')) {
         setFile(selectedFile);
         setError(null);
         setMarkdown('');
       } else {
-        setError('Please select a valid .hwpx file.');
+        setError('Please select a valid .hwp or .hwpx file.');
         setFile(null);
       }
     }
@@ -29,7 +30,11 @@ export default function App() {
     setIsProcessing(true);
     setError(null);
     try {
-      const result = await convertHwpxToMarkdown(file);
+      const isHwpx = file.name.toLowerCase().endsWith('.hwpx');
+      const result = isHwpx 
+        ? await convertHwpxToMarkdown(file)
+        : await convertHwpToMarkdown(file);
+        
       setMarkdown(result);
     } catch (err) {
       console.error(err);
@@ -45,7 +50,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = file?.name.replace(/\.hwpx$/i, '.md') || 'converted.md';
+    a.download = file?.name.replace(/\.hwp(x)?$/i, '.md') || 'converted.md';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -69,7 +74,7 @@ export default function App() {
             transition={{ delay: 0.1 }}
             className="text-4xl font-bold tracking-tight text-slate-900 mb-3"
           >
-            HWPX to Markdown
+            HWP/HWPX to Markdown
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}
@@ -92,13 +97,13 @@ export default function App() {
                 <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-12 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative group">
                   <input
                     type="file"
-                    accept=".hwpx"
+                    accept=".hwpx,.hwp"
                     onChange={handleFileChange}
                     className="absolute inset-0 opacity-0 cursor-pointer"
                   />
                   <Upload className="w-12 h-12 text-slate-400 mb-4 group-hover:text-blue-500 transition-colors" />
                   <p className="text-lg font-medium text-slate-700">
-                    {file ? file.name : "Click or drag .hwpx file here"}
+                    {file ? file.name : "Click or drag .hwp or .hwpx file here"}
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
                     Maximum file size: 50MB
@@ -183,7 +188,7 @@ export default function App() {
         </main>
 
         <footer className="mt-20 text-center text-slate-400 text-sm">
-          <p>© {new Date().getFullYear()} HWPX to Markdown Converter</p>
+          <p>© {new Date().getFullYear()} HWP/HWPX to Markdown Converter</p>
           <p className="mt-1">Private & Secure: All processing happens in your browser.</p>
         </footer>
       </div>
