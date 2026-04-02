@@ -1,0 +1,5 @@
+{
+  "name": "HWPX to Markdown Converter",
+  "description": "A simple web tool to convert .hwpx files to Markdown format.",
+  "requestFramePermissions": []
+}
